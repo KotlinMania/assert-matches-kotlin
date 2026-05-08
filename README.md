@@ -71,7 +71,7 @@ See LICENSE-APACHE and LICENSE-MIT for details.
 
 ```kotlin
 dependencies {
-    implementation("io.github.kotlinmania:assert-matches-kotlin:0.1.0-SNAPSHOT")
+    implementation("io.github.kotlinmania:assert-matches-kotlin:0.1.0")
 }
 ```
 
