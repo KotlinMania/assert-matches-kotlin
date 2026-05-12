@@ -1,3 +1,8 @@
+import org.gradle.api.artifacts.Configuration
+import org.gradle.api.tasks.PathSensitivity
+import org.gradle.api.tasks.testing.AbstractTestTask
+import org.gradle.api.tasks.testing.logging.TestExceptionFormat
+import org.gradle.api.tasks.testing.logging.TestLogEvent
 import org.jetbrains.kotlin.gradle.ExperimentalWasmDsl
 import org.jetbrains.kotlin.gradle.plugin.mpp.apple.XCFramework
 import org.jetbrains.kotlin.gradle.targets.js.yarn.YarnRootExtension
@@ -16,18 +21,6 @@ plugins {
 
 group = "io.github.kotlinmania"
 version = "0.1.0"
-
-val androidSdkDir: String? =
-    providers.environmentVariable("ANDROID_SDK_ROOT").orNull
-        ?: providers.environmentVariable("ANDROID_HOME").orNull
-
-if (androidSdkDir != null && file(androidSdkDir).exists()) {
-    val localProperties = rootProject.file("local.properties")
-    if (!localProperties.exists()) {
-        val sdkDirPropertyValue = file(androidSdkDir).absolutePath.replace("\\", "/")
-        localProperties.writeText("sdk.dir=$sdkDirPropertyValue")
-    }
-}
 
 kotlin {
     applyDefaultHierarchyTemplate()
@@ -50,8 +43,19 @@ kotlin {
             xcf.add(this)
         }
     }
+    iosX64 {
+        binaries.framework {
+            baseName = "AssertMatches"
+            xcf.add(this)
+        }
+    }
     linuxX64()
     mingwX64()
+    linuxArm64()
+    androidNativeArm32()
+    androidNativeArm64()
+    androidNativeX86()
+    androidNativeX64()
     iosArm64 {
         binaries.framework {
             baseName = "AssertMatches"
@@ -64,6 +68,42 @@ kotlin {
             xcf.add(this)
         }
     }
+    tvosArm64 {
+        binaries.framework {
+            baseName = "AssertMatches"
+            xcf.add(this)
+        }
+    }
+    tvosSimulatorArm64 {
+        binaries.framework {
+            baseName = "AssertMatches"
+            xcf.add(this)
+        }
+    }
+    watchosArm32 {
+        binaries.framework {
+            baseName = "AssertMatches"
+            xcf.add(this)
+        }
+    }
+    watchosArm64 {
+        binaries.framework {
+            baseName = "AssertMatches"
+            xcf.add(this)
+        }
+    }
+    watchosDeviceArm64 {
+        binaries.framework {
+            baseName = "AssertMatches"
+            xcf.add(this)
+        }
+    }
+    watchosSimulatorArm64 {
+        binaries.framework {
+            baseName = "AssertMatches"
+            xcf.add(this)
+        }
+    }
     js {
         browser()
         nodejs()
@@ -71,6 +111,10 @@ kotlin {
     @OptIn(ExperimentalWasmDsl::class)
     wasmJs {
         browser()
+        nodejs()
+    }
+    @OptIn(ExperimentalWasmDsl::class)
+    wasmWasi {
         nodejs()
     }
 
@@ -103,6 +147,24 @@ kotlin {
         val commonTest by getting { dependencies { implementation(kotlin("test")) } }
     }
     jvmToolchain(21)
+}
+
+tasks.withType<AbstractTestTask>().configureEach {
+    testLogging {
+        events(
+            TestLogEvent.STARTED,
+            TestLogEvent.PASSED,
+            TestLogEvent.SKIPPED,
+            TestLogEvent.FAILED,
+            TestLogEvent.STANDARD_OUT,
+            TestLogEvent.STANDARD_ERROR,
+        )
+        exceptionFormat = TestExceptionFormat.FULL
+        showCauses = true
+        showExceptions = true
+        showStackTraces = true
+        showStandardStreams = true
+    }
 }
 
 rootProject.extensions.configure<NodeJsEnvSpec>("kotlinNodeJsSpec") {
@@ -209,4 +271,97 @@ tasks.register("test") {
     )
 
     dependsOn(defaultTestTasks.mapNotNull { taskName -> tasks.findByName(taskName) })
+}
+
+// ---------------------------------------------------------------------------
+// CodeQL Java/Kotlin extraction task
+//
+// The Kotlin Multiplatform build above runs on Kotlin 2.3.21. The K2 phased
+// compilation pipeline (`org.jetbrains.kotlin.cli.pipeline.JvmCliPipeline`)
+// is engaged whenever `-Xmulti-platform`/`-Xfragments=…` are in the kotlinc
+// args — that's KGP's standard multiplatform compileKotlinJvm shape. The
+// CodeQL Java agent (`codeql-java-agent.jar` v2.25.4) hooks
+// `K2JVMCompiler.doExecute(…)`, which the new pipeline bypasses, so an
+// agent-instrumented KMP compileKotlinJvm produces zero Kotlin TRAP.
+//
+// Fix: run a separate single-target JVM compile of commonMain sources via
+// JavaExec with NO multiplatform flags.
+val codeqlKotlinc: Configuration by configurations.creating {
+    description = "Kotlin compiler (CodeQL extraction target only — not published)"
+    isCanBeResolved = true
+    isCanBeConsumed = false
+}
+
+val codeqlSourceClasspath: Configuration by configurations.creating {
+    description = "Runtime classpath for CodeQL extraction of commonMain sources"
+    isCanBeResolved = true
+    isCanBeConsumed = false
+}
+
+dependencies {
+    codeqlKotlinc("org.jetbrains.kotlin:kotlin-compiler-embeddable:2.3.21")
+    codeqlSourceClasspath("org.jetbrains.kotlin:kotlin-stdlib:2.3.21")
+    codeqlSourceClasspath("org.jetbrains.kotlinx:kotlinx-coroutines-core-jvm:1.10.2")
+    codeqlSourceClasspath("org.jetbrains.kotlinx:kotlinx-serialization-core-jvm:1.11.0")
+    codeqlSourceClasspath("org.jetbrains.kotlinx:kotlinx-serialization-json-jvm:1.11.0")
+    codeqlSourceClasspath("org.jetbrains.kotlinx:kotlinx-datetime-jvm:0.7.1")
+    codeqlSourceClasspath("org.jetbrains.kotlinx:kotlinx-collections-immutable-jvm:0.4.0")
+}
+
+val codeqlCompileJvm = tasks.register<org.gradle.api.tasks.JavaExec>("codeqlCompileJvm") {
+    description =
+        "Compile commonMain Kotlin sources with kotlinc 2.3.21 for CodeQL Java/Kotlin extraction."
+    group = "verification"
+
+    classpath(codeqlKotlinc)
+    mainClass.set("org.jetbrains.kotlin.cli.jvm.K2JVMCompiler")
+
+    val outDir = layout.buildDirectory.dir("classes/kotlin/codeql-jvm")
+    val sources = fileTree("src/commonMain/kotlin") { include("**/*.kt") }
+    val sentinelDir = layout.buildDirectory.dir("generated/codeql-empty-source")
+    inputs.files(sources).withPathSensitivity(PathSensitivity.RELATIVE)
+    inputs.files(codeqlSourceClasspath)
+    outputs.dir(outDir)
+    outputs.dir(sentinelDir)
+
+    doFirst {
+        outDir.get().asFile.mkdirs()
+        val sourceFiles = sources.files.toMutableList()
+        if (sourceFiles.isEmpty()) {
+            val sentinelFile = sentinelDir.get().asFile.resolve(
+                "io/github/kotlinmania/codeql/_CodeqlEmptySource.kt",
+            )
+            sentinelFile.parentFile.mkdirs()
+            sentinelFile.writeText(
+                """
+                // Auto-generated. Present so codeqlCompileJvm has at least
+                // one Kotlin source to feed kotlinc; replaced by real
+                // commonMain content once porting begins.
+                package io.github.kotlinmania.codeql
+
+                private object _CodeqlEmptySource
+                """.trimIndent(),
+            )
+            sourceFiles += sentinelFile
+        }
+        args = listOf(
+            "-d",
+            outDir.get().asFile.absolutePath,
+            "-classpath",
+            codeqlSourceClasspath.asPath,
+            "-jvm-target",
+            "21",
+            "-no-stdlib",
+            "-no-reflect",
+            "-language-version",
+            "2.3",
+            "-api-version",
+            "2.3",
+            "-opt-in",
+            "kotlin.time.ExperimentalTime",
+            "-opt-in",
+            "kotlin.concurrent.atomics.ExperimentalAtomicApi",
+            "-Xexpect-actual-classes",
+        ) + sourceFiles.map { it.absolutePath }
+    }
 }
