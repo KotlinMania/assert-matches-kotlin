@@ -1,4 +1,4 @@
-// port-lint: source src/lib.rs
+// port-lint: source lib.rs
 package io.github.kotlinmania.assertmatches
 
 import kotlin.test.Test
@@ -65,19 +65,11 @@ class LibTest {
             }
         }
         assertMatchesYield(c, "Foo.B(s) | Foo.C(s)", { it is Foo.B || it is Foo.C }) { matched ->
-            val s = when (matched) {
-                is Foo.B -> matched.value
-                is Foo.C -> matched.value
-                else -> error("unreachable")
-            }
+            val s = fooBorCString(matched)
             assertEquals("foo", s)
         }
         assertMatchesYield(c, "Foo.B(s) | Foo.C(s)", { it is Foo.B || it is Foo.C }) { matched ->
-            val s = when (matched) {
-                is Foo.B -> matched.value
-                is Foo.C -> matched.value
-                else -> error("unreachable")
-            }
+            val s = fooBorCString(matched)
             assertEquals("foo", s)
             check(true)
         }
@@ -92,11 +84,7 @@ class LibTest {
                 }
             },
         ) { matched ->
-            val s = when (matched) {
-                is Foo.B -> matched.value
-                is Foo.C -> matched.value
-                else -> error("unreachable")
-            }
+            val s = fooBorCString(matched)
             assertEquals("foo", s)
         }
         assertMatchesYield(
@@ -110,11 +98,7 @@ class LibTest {
                 }
             },
         ) { matched ->
-            val s = when (matched) {
-                is Foo.B -> matched.value
-                is Foo.C -> matched.value
-                else -> error("unreachable")
-            }
+            val s = fooBorCString(matched)
             assertEquals("foo", s)
             check(true)
         }
@@ -267,8 +251,15 @@ class LibTest {
 
     private fun panicMessage(block: () -> Unit): String {
         val err = assertFailsWith<AssertionError>("function did not panic", block)
-        return err.message ?: error("function panicked with non-String value")
+        return err.message ?: throw AssertionError("function panicked with non-String value")
     }
+
+    private fun fooBorCString(value: Foo): String =
+        when (value) {
+            is Foo.B -> value.value
+            is Foo.C -> value.value
+            is Foo.A -> throw AssertionError("expected Foo.B or Foo.C")
+        }
 
     @Test
     fun testPanicMessage() {

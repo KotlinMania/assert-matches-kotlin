@@ -1,19 +1,18 @@
-// port-lint: source src/lib.rs
+// port-lint: source lib.rs
 package io.github.kotlinmania.assertmatches
 
 /**
  * Asserts that an expression matches a given predicate.
  *
  * Unlike [assertMatches], `debugAssertMatches` is conceptually the
- * non-optimized-build counterpart: in Rust, `debug_assert_matches!`
- * statements are only enabled in non-optimized builds by default, and an
- * optimized build omits them unless `-C debug-assertions` is passed to the
- * compiler.
+ * non-optimized-build counterpart: upstream debug assertions are only enabled
+ * in non-optimized builds by default, and an optimized build omits them unless
+ * debug assertions are explicitly enabled.
  *
- * Kotlin Multiplatform has no portable equivalent of Rust's
- * `debug_assertions` flag, so this helper always evaluates its arguments
- * and delegates to [assertMatches]. Callers who need release-mode elision
- * should guard the call themselves.
+ * Kotlin Multiplatform has no portable equivalent of that upstream build flag,
+ * so this helper always evaluates its arguments and delegates to
+ * [assertMatches]. Callers who need release-mode elision should guard the call
+ * themselves.
  *
  * See the [assertMatches] documentation for more information.
  */
