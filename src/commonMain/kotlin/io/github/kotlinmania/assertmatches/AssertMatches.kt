@@ -1,9 +1,9 @@
-// port-lint: source src/lib.rs
+// port-lint: source lib.rs
 package io.github.kotlinmania.assertmatches
 
 /**
  * Provides a function, [assertMatches], which tests whether a value
- * matches a given predicate, throwing an [AssertionError] if the match fails.
+ * satisfies a given predicate, throwing an [AssertionError] if the predicate rejects it.
  *
  * See the [assertMatches] documentation for more information.
  *
@@ -13,21 +13,20 @@ package io.github.kotlinmania.assertmatches
  * helper.
  *
  * Kotlin has no equivalent of Rust's compile-time pattern grammar, so the
- * upstream `macro_rules!` shapes are exposed here as overloaded inline
+ * upstream macro declarations are exposed here as overloaded inline
  * functions: the predicate carries the pattern + optional guard, an optional
  * `arm` lambda yields a value, and an optional `message` is appended to the
- * panic text. The "or-pattern" form `Foo::A(_) | Foo::B(_)` translates to a
- * single `||`-joined boolean expression in the predicate.
+ * failure text. The "or-pattern" form for either `Foo.A` or `Foo.B`
+ * translates to a single disjunction in the predicate.
  */
 
 /**
  * Asserts that an expression matches a given predicate.
  *
- * The predicate carries both the pattern and any guard expression: a
- * Rust call such as `assertMatches!(a, Foo::A(_))` translates to
- * `assertMatches(a, "Foo.A") { it is Foo.A }`, and a guarded call such as
- * `assertMatches!(a, Foo::A(i) if i > 0)` translates to
- * `assertMatches(a, "Foo.A(i) if i > 0") { it is Foo.A && it.value > 0 }`.
+ * The predicate carries both the pattern and any guard expression. Use
+ * `assertMatches(a, "Foo.A") { it is Foo.A }` for a simple case, or
+ * `assertMatches(a, "Foo.A(i) if i > 0") { it is Foo.A && it.value > 0 }`
+ * when the predicate also checks the contained value.
  *
  * `patternDesc` is the textual description that appears in the failure
  * message in place of the upstream `stringify!(pattern)` expansion.
@@ -66,10 +65,9 @@ public inline fun <T> assertMatches(
  * Asserts that an expression matches a given predicate, appending a custom
  * message to the failure text.
  *
- * The Rust macro accepts trailing format-style arguments after the pattern;
+ * The upstream API accepts trailing format-style arguments after the pattern;
  * in Kotlin the message is computed by the caller and passed as a single
- * string. Use Kotlin string templates to mirror the upstream
- * `format_args!(...)` shape.
+ * string. Use Kotlin string templates to mirror that behavior.
  *
  * ## Example
  *
@@ -98,9 +96,8 @@ public inline fun <T> assertMatches(
  * the value to perform additional assertions or to yield a value from the
  * call.
  *
- * This mirrors the upstream `assertMatches!(expr, pattern => arm)` shape: the
- * predicate carries the pattern (and optional guard) and `arm` runs only when
- * the predicate succeeds.
+ * This mirrors the upstream arm form: the predicate carries the pattern (and
+ * optional guard) and `arm` runs only when the predicate succeeds.
  *
  * Named separately from [assertMatches] so that a Boolean-returning `arm`
  * does not collide with a Boolean-returning predicate at overload resolution.

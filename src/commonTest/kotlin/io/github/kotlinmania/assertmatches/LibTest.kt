@@ -1,4 +1,4 @@
-// port-lint: source src/lib.rs
+// port-lint: source lib.rs
 package io.github.kotlinmania.assertmatches
 
 import kotlin.test.Test
@@ -65,19 +65,11 @@ class LibTest {
             }
         }
         assertMatchesYield(c, "Foo.B(s) | Foo.C(s)", { it is Foo.B || it is Foo.C }) { matched ->
-            val s = when (matched) {
-                is Foo.B -> matched.value
-                is Foo.C -> matched.value
-                else -> error("unreachable")
-            }
+            val s = matched.bOrCString()
             assertEquals("foo", s)
         }
         assertMatchesYield(c, "Foo.B(s) | Foo.C(s)", { it is Foo.B || it is Foo.C }) { matched ->
-            val s = when (matched) {
-                is Foo.B -> matched.value
-                is Foo.C -> matched.value
-                else -> error("unreachable")
-            }
+            val s = matched.bOrCString()
             assertEquals("foo", s)
             check(true)
         }
@@ -92,11 +84,7 @@ class LibTest {
                 }
             },
         ) { matched ->
-            val s = when (matched) {
-                is Foo.B -> matched.value
-                is Foo.C -> matched.value
-                else -> error("unreachable")
-            }
+            val s = matched.bOrCString()
             assertEquals("foo", s)
         }
         assertMatchesYield(
@@ -110,11 +98,7 @@ class LibTest {
                 }
             },
         ) { matched ->
-            val s = when (matched) {
-                is Foo.B -> matched.value
-                is Foo.C -> matched.value
-                else -> error("unreachable")
-            }
+            val s = matched.bOrCString()
             assertEquals("foo", s)
             check(true)
         }
@@ -267,8 +251,15 @@ class LibTest {
 
     private fun panicMessage(block: () -> Unit): String {
         val err = assertFailsWith<AssertionError>("function did not panic", block)
-        return err.message ?: error("function panicked with non-String value")
+        return err.message ?: throw AssertionError("function panicked without a message")
     }
+
+    private fun Foo.bOrCString(): String =
+        when (this) {
+            is Foo.B -> value
+            is Foo.C -> value
+            is Foo.A -> throw AssertionError("expected Foo.B or Foo.C")
+        }
 
     @Test
     fun testPanicMessage() {
@@ -293,7 +284,7 @@ class LibTest {
         // value, predicate, arm
         assertEquals(
             "assertion failed: `A(value=1)` does not match `Foo.B(_)`",
-            panicMessage { assertMatchesYield(a, "Foo.B(_)", { it is Foo.B }) {} },
+            panicMessage { assertMatchesYield(a, "Foo.B(_)", { it is Foo.B }) { Unit } },
         )
 
         // value, predicate (with guard inlined), arm
@@ -304,7 +295,7 @@ class LibTest {
                     a,
                     """Foo.B(s) if s == "foo"""",
                     { it is Foo.B && it.value == "foo" },
-                ) {}
+                ) { Unit }
             },
         )
 
@@ -327,7 +318,7 @@ class LibTest {
         // value, predicate, arm, args
         assertEquals(
             "assertion failed: `A(value=1)` does not match `Foo.B(_)`: msg",
-            panicMessage { assertMatchesYield(a, "Foo.B(_)", "msg", { it is Foo.B }) {} },
+            panicMessage { assertMatchesYield(a, "Foo.B(_)", "msg", { it is Foo.B }) { Unit } },
         )
 
         // value, predicate (with guard inlined), arm, args
@@ -339,7 +330,7 @@ class LibTest {
                     """Foo.B(s) if s == "foo"""",
                     "msg",
                     { it is Foo.B && it.value == "foo" },
-                ) {}
+                ) { Unit }
             },
         )
     }
