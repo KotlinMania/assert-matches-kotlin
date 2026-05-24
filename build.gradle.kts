@@ -200,10 +200,18 @@ kotlin {
         binaries.framework { baseName = "AssertMatches"; xcf.add(this) }
     }
     iosSimulatorArm64 {
-        binaries.framework { baseName = "AssertMatches"; xcf.add(this) }
+        binaries.framework {
+            baseName = "AssertMatches"
+            isStatic = true
+            xcf.add(this)
+        }
     }
     iosX64 {
-        binaries.framework { baseName = "AssertMatches"; xcf.add(this) }
+        binaries.framework {
+            baseName = "AssertMatches"
+            isStatic = true
+            xcf.add(this)
+        }
     }
 
     tvosArm64 {
