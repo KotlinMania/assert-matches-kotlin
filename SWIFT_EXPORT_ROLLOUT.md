@@ -42,12 +42,14 @@ proven end-to-end with a working `swift test` invocation against the
 
 ### The five changes
 
-1. **`build.gradle.kts`** — **both** iOS Simulator framework binaries
-   (`iosSimulatorArm64` *and* `iosX64`) now have `isStatic = true`.
-   The Swift Export SPM bridge expects a static framework for the iOS
-   Simulator so that the SPM linker can pull in the symbol
-   implementations directly. Both simulator slices must match — if
-   `iosSimulatorArm64` is static and `iosX64` is left dynamic, the
+1. **`build.gradle.kts`** — **all** iOS framework binaries
+   (`iosArm64`, `iosSimulatorArm64`, and `iosX64`) now have
+   `isStatic = true`. The Swift Export SPM bridge expects static iOS
+   frameworks so that the SPM linker can pull in the symbol
+   implementations directly. The iOS slices must match — if
+   `iosArm64` is dynamic while `iosX64` is static, the
+   `assembleDebugIosFatFrameworkFor<Name>XCFramework` task fails, and if
+   `iosSimulatorArm64` is static while `iosX64` is dynamic, the
    `assembleDebugIosSimulatorFatFrameworkFor<Name>XCFramework` task
    fails with:
 
@@ -58,14 +60,13 @@ proven end-to-end with a working `swift test` invocation against the
      All input frameworks must be either static or dynamic
    ```
 
-   The other Apple targets (`iosArm64`, `tvosArm64`,
-   `tvosSimulatorArm64`, `watchos*`, `macosArm64`) stay dynamic.
+   The non-iOS Apple targets (`tvosArm64`, `tvosSimulatorArm64`,
+   `watchos*`, `macosArm64`) stay dynamic.
 
    > **Note**: earlier versions of this recipe and of `apply.sh` flipped
-   > only `iosSimulatorArm64`. Repos that landed the rollout before this
-   > correction need a follow-up commit adding `isStatic = true` to
-   > `iosX64`. http-kotlin's `build.gradle.kts:218-231` is the working
-   > reference shape.
+   > only `iosSimulatorArm64`, then only the two simulator slices. Repos
+   > that landed before this correction need a follow-up commit adding
+   > `isStatic = true` to `iosArm64` and `iosX64`.
 
 2. **`.github/workflows/swift.yml`** — a new platform workflow with a
    `workflow_call:` trigger, matching the shape of the existing
