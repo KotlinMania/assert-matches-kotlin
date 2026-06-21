@@ -7,9 +7,17 @@ import kotlin.test.assertFailsWith
 
 class LibTest {
     sealed class Foo {
-        data class A(val value: Int) : Foo()
-        data class B(val value: String) : Foo()
-        data class C(val value: String) : Foo()
+        data class A(
+            val value: Int,
+        ) : Foo()
+
+        data class B(
+            val value: String,
+        ) : Foo()
+
+        data class C(
+            val value: String,
+        ) : Foo()
     }
 
     @Test
