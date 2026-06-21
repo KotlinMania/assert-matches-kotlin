@@ -292,7 +292,7 @@ class LibTest {
         // value, predicate, arm
         assertEquals(
             "assertion failed: `A(value=1)` does not match `Foo.B(_)`",
-            panicMessage { assertMatchesYield(a, "Foo.B(_)", { it is Foo.B }) { Unit } },
+            panicMessage { assertMatchesYield(a, "Foo.B(_)", { it is Foo.B }) { } },
         )
 
         // value, predicate (with guard inlined), arm
@@ -303,7 +303,7 @@ class LibTest {
                     a,
                     """Foo.B(s) if s == "foo"""",
                     { it is Foo.B && it.value == "foo" },
-                ) { Unit }
+                ) { }
             },
         )
 
@@ -326,7 +326,7 @@ class LibTest {
         // value, predicate, arm, args
         assertEquals(
             "assertion failed: `A(value=1)` does not match `Foo.B(_)`: msg",
-            panicMessage { assertMatchesYield(a, "Foo.B(_)", "msg", { it is Foo.B }) { Unit } },
+            panicMessage { assertMatchesYield(a, "Foo.B(_)", "msg", { it is Foo.B }) { } },
         )
 
         // value, predicate (with guard inlined), arm, args
@@ -338,7 +338,7 @@ class LibTest {
                     """Foo.B(s) if s == "foo"""",
                     "msg",
                     { it is Foo.B && it.value == "foo" },
-                ) { Unit }
+                ) { }
             },
         )
     }
