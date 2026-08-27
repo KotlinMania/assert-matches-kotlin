@@ -5,13 +5,12 @@ package io.github.kotlinmania.assertmatches
  * Asserts that an expression matches a given predicate.
  *
  * Unlike [assertMatches], `debugAssertMatches` is conceptually the
- * non-optimized-build counterpart: in Rust, debug-only assertions of this
- * family are enabled only in non-optimized builds by default, and an
- * optimized build omits them unless `-C debug-assertions` is passed to the
- * compiler.
+ * non-optimized-build counterpart: upstream debug assertions are only enabled
+ * in non-optimized builds by default, and an optimized build omits them unless
+ * debug assertions are explicitly enabled.
  *
- * Kotlin Multiplatform has no portable equivalent of the upstream debug-only
- * build flag, so this helper always evaluates its arguments and delegates to
+ * Kotlin Multiplatform has no portable equivalent of that upstream build flag,
+ * so this helper always evaluates its arguments and delegates to
  * [assertMatches]. Callers who need release-mode elision should guard the call
  * themselves.
  *

@@ -12,21 +12,21 @@ package io.github.kotlinmania.assertmatches
  * See the [debugAssertMatches] documentation for more information about that
  * helper.
  *
- * Kotlin has no equivalent of Rust's compile-time pattern grammar, so the
- * upstream macro declarations are exposed here as overloaded inline
- * functions: the predicate carries the pattern + optional guard, an optional
- * `arm` lambda yields a value, and an optional `message` is appended to the
- * failure text. The "or-pattern" form for either `Foo.A` or `Foo.B`
- * translates to a single disjunction in the predicate.
+ * Kotlin has no equivalent of the upstream compile-time pattern grammar, so
+ * this port exposes the behavior as overloaded inline functions: the
+ * predicate carries the pattern plus optional guard, an optional `arm` lambda
+ * yields a value, and an optional `message` is appended to the panic text.
+ * An either/or pattern translates to a joined boolean expression in the
+ * predicate.
  */
 
 /**
  * Asserts that an expression matches a given predicate.
  *
- * The predicate carries both the pattern and any guard expression. Use
- * `assertMatches(a, "Foo.A") { it is Foo.A }` for a simple case, or
- * `assertMatches(a, "Foo.A(i) if i > 0") { it is Foo.A && it.value > 0 }`
- * when the predicate also checks the contained value.
+ * The predicate carries both the pattern and any guard expression: a simple
+ * `Foo.A` check translates to `assertMatches(a, "Foo.A") { it is Foo.A }`,
+ * and a guarded `Foo.A` check translates to
+ * `assertMatches(a, "Foo.A(i) if i > 0") { it is Foo.A && it.value > 0 }`.
  *
  * `patternDesc` is the textual description that appears in the failure
  * message in place of the upstream `stringify!(pattern)` expansion.
@@ -67,7 +67,7 @@ public inline fun <T> assertMatches(
  *
  * The upstream API accepts trailing format-style arguments after the pattern;
  * in Kotlin the message is computed by the caller and passed as a single
- * string. Use Kotlin string templates to mirror that behavior.
+ * string. Use Kotlin string templates to mirror that formatting shape.
  *
  * ## Example
  *
@@ -96,8 +96,8 @@ public inline fun <T> assertMatches(
  * the value to perform additional assertions or to yield a value from the
  * call.
  *
- * This mirrors the upstream arm form: the predicate carries the pattern (and
- * optional guard) and `arm` runs only when the predicate succeeds.
+ * This mirrors the upstream pattern-plus-arm shape: the predicate carries the
+ * pattern and optional guard, and `arm` runs only when the predicate succeeds.
  *
  * Named separately from [assertMatches] so that a Boolean-returning `arm`
  * does not collide with a Boolean-returning predicate at overload resolution.
