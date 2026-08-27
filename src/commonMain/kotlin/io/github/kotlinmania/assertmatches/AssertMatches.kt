@@ -3,7 +3,7 @@ package io.github.kotlinmania.assertmatches
 
 /**
  * Provides a function, [assertMatches], which tests whether a value
- * matches a given predicate, throwing an [AssertionError] if the match fails.
+ * satisfies a given predicate, throwing an [AssertionError] if the predicate rejects it.
  *
  * See the [assertMatches] documentation for more information.
  *
