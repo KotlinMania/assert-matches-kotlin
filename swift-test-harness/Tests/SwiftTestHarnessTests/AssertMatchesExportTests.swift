@@ -1,9 +1,21 @@
+#if canImport(Testing)
+import Testing
 import AssertMatches
 
-@main
+@Suite("AssertMatches Swift Export Tests")
 struct AssertMatchesExportTests {
-    static func main() {
-        print("AssertMatches swift module imported cleanly")
+    @Test("AssertMatches swift module imported cleanly")
+    func testSwiftModuleLoads() throws {
+        #expect(Bool(true), "AssertMatches swift module imported cleanly")
     }
 }
+#elseif canImport(XCTest)
+import XCTest
+import AssertMatches
 
+final class AssertMatchesExportTests: XCTestCase {
+    func testSwiftModuleLoads() throws {
+        XCTAssertTrue(true, "AssertMatches swift module imported cleanly")
+    }
+}
+#endif
