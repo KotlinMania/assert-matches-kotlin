@@ -1,4 +1,4 @@
-// port-lint: source tests/selective_import1.rs
+// port-lint: tests tests/selective_import1.rs
 package io.github.kotlinmania.assertmatches
 
 import kotlin.test.Test

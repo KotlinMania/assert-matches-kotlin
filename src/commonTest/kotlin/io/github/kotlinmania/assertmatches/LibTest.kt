@@ -1,4 +1,4 @@
-// port-lint: source lib.rs
+// port-lint: tests src/lib.rs
 package io.github.kotlinmania.assertmatches
 
 import kotlin.test.Test
@@ -257,8 +257,8 @@ class LibTest {
         }
     }
 
-    private fun panicMessage(block: () -> Unit): String {
-        val err = assertFailsWith<AssertionError>("function did not panic", block)
+    private fun panicMessage(f: () -> Unit): String {
+        val err = assertFailsWith<AssertionError>("function did not panic", f)
         return err.message ?: throw AssertionError("function panicked without a message")
     }
 
