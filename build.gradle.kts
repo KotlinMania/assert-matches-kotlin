@@ -22,6 +22,7 @@ import org.jetbrains.kotlin.gradle.targets.js.yarn.YarnRootExtension
 import org.jetbrains.kotlin.gradle.targets.wasm.nodejs.WasmNodeJsEnvSpec
 import org.jetbrains.kotlin.gradle.targets.wasm.yarn.WasmYarnRootEnvSpec
 import java.io.ByteArrayInputStream
+import java.io.ByteArrayOutputStream
 import java.net.URI
 import java.net.http.HttpClient
 import java.net.http.HttpRequest
@@ -49,6 +50,21 @@ version = providers.gradleProperty("project.version").getOrElse("0.1.0-SNAPSHOT"
 val frameworkName = providers.gradleProperty("project.frameworkName").getOrElse("Unnamed")
 val projectNamespace = providers.gradleProperty("project.namespace").getOrElse("io.github.kotlinmania")
 val kotlinVersion = providers.gradleProperty("versions.kotlin").getOrElse("2.4.0")
+// kotlinmania:common-api-bundle:v1 begin
+val commonMainApiDependencyBundle =
+    providers
+        .gradleProperty("project.dependencies.commonMainApiBundle")
+        .orNull
+        ?.trim()
+        ?.takeIf { it.isNotEmpty() }
+        ?.let { bundleName ->
+            extensions
+                .getByType(VersionCatalogsExtension::class.java)
+                .named("libs")
+                .findBundle(bundleName)
+                .orElseThrow { GradleException("Missing public API bundle '$bundleName'") }
+        }
+// kotlinmania:common-api-bundle:v1 end
 val commonMainBundleName = providers.gradleProperty("project.dependencies.commonMainBundle").get()
 val commonMainDependencyBundle =
     extensions
@@ -137,7 +153,7 @@ val intellijCoroutinesVersion =
 val projectDependencyHandler = project.dependencies
 configurations.configureEach {
     if (name == "swiftExportClasspath") {
-        dependencies.add(projectDependencyHandler.create("org.jetbrains.kotlin:swift-export-embeddable:$kotlinVersion"))
+        dependencies.add(projectDependencyHandler.create("io.github.kotlinmania:swift-export-embeddable:2.4.20-km.1"))
         dependencies.add(
             projectDependencyHandler.create(
                 "org.jetbrains.intellij.deps.kotlinx:kotlinx-coroutines-core-jvm:$intellijCoroutinesVersion",
@@ -363,15 +379,6 @@ tasks
     }.configureEach {
         dependsOn(ensureAndroidSdk)
     }
-
-// Gap #9b: KGP-generated bridge boilerplate and KotlinCoroutineSupport runtime
-// produce warnings (unchecked casts, unused expressions, opt-in requirements)
-// that cannot be fixed in source — they are regenerated every build.
-tasks.withType<org.jetbrains.kotlin.gradle.tasks.KotlinCompilationTask<*>>().configureEach {
-    if (name.startsWith("compileSwiftExport")) {
-        compilerOptions.allWarningsAsErrors.set(false)
-    }
-}
 
 val jvmToolchainVersion = providers.gradleProperty("jvm.toolchain").getOrElse("21").toInt()
 
@@ -775,6 +782,7 @@ kotlin {
     sourceSets {
         commonMain.dependencies {
             implementation(commonMainDependencyBundle)
+            commonMainApiDependencyBundle?.let { api(it) }
         }
         commonTest.dependencies {
             implementation(kotlin("test"))
@@ -1375,42 +1383,32 @@ tasks.register("hostTests") {
     )
 }
 
-// Patch generated SPM Package.swift to include minimum macOS platform for Swift Concurrency
-tasks.matching { it.name.contains("GenerateSPMPackage") }.configureEach {
+// KGP generates separate Swift modules for project and dependency APIs. Set the
+// package language mode explicitly; do not rewrite their generated Swift sources.
+val strictSwiftConfiguration = layout.projectDirectory.file("verification/strict-swift.xcconfig")
+tasks.matching { it.name.endsWith("generateSPMPackage", ignoreCase = true) }.configureEach {
     doLast {
-        val spmDir =
+        val manifest =
             layout.buildDirectory
-                .dir("SPMPackage")
-                .orNull
-                ?.asFile
-        if (spmDir != null && spmDir.exists()) {
-            spmDir.walkTopDown().filter { it.name == "Package.swift" }.forEach { file ->
-                var text = file.readText()
-                if (text.contains("swift-tools-version: 6.0")) {
-                    text = text.replace("swift-tools-version: 6.0", "swift-tools-version: 5.9")
-                }
-                if (!text.contains("platforms:")) {
-                    text =
-                        text.replaceFirst(
-                            Regex("""(let package = Package\s*\(\s*name:\s*"[^"]*",)"""),
-                            "$1\n    platforms: [.macOS(\"15.0\")],",
-                        )
-                } else if (text.contains(".macOS(.v15)") || text.contains(".macOS(.v14)")) {
-                    text = text.replace(".macOS(.v15)", ".macOS(\"15.0\")").replace(".macOS(.v14)", ".macOS(\"15.0\")")
-                }
-                file.writeText(text)
-            }
-            spmDir.walkTopDown().filter { it.name == "OrgJetbrainsKotlinxKotlinxSerializationCore.swift" }.forEach { file ->
-                val text = file.readText()
-                val cleaned =
-                    text.replace(
-                        Regex("""@_spi\([^)]+\)\s+public func (?:decodeSequentially|shouldEncodeElementDefault|encodeNotNullMark)\([^)]*\)(?:\s*->\s*[^\n{]+)?\s*\{\s*fatalError\([^)]+\)\s*\}"""),
-                        "",
-                    )
-                if (cleaned != text) {
-                    file.writeText(cleaned)
-                }
-            }
+                .file("SPMPackage/macosArm64/Debug/Package.swift")
+                .get()
+                .asFile
+        serviceOf<ExecOperations>()
+            .exec {
+                commandLine(
+                    "python3",
+                    layout.projectDirectory.file("verification/verify_swift_package.py").asFile,
+                    manifest,
+                )
+            }.assertNormalExitValue()
+    }
+}
+tasks.matching { it.name.endsWith("buildSPMPackage", ignoreCase = true) }.configureEach {
+    inputs.file(strictSwiftConfiguration)
+    doFirst {
+        val actual = providers.environmentVariable("XCODE_XCCONFIG_FILE").orNull
+        check(actual != null && file(actual).canonicalFile == strictSwiftConfiguration.asFile.canonicalFile) {
+            "Set XCODE_XCCONFIG_FILE=${strictSwiftConfiguration.asFile} for Swift 5 dependency compilation with warnings as errors"
         }
     }
 }
@@ -1458,6 +1456,7 @@ tasks.register("swiftExportSmokeTest") {
                         "FRAMEWORKS_FOLDER_PATH" to "Frameworks",
                         "MACOSX_DEPLOYMENT_TARGET" to "15.0",
                         "DEPLOYMENT_TARGET_SETTING_NAME" to "MACOSX_DEPLOYMENT_TARGET",
+                        "XCODE_XCCONFIG_FILE" to strictSwiftConfiguration.asFile.absolutePath,
                     ),
                 )
             }.assertNormalExitValue()
@@ -1468,11 +1467,70 @@ tasks.register("swiftExportSmokeTest") {
                 commandLine("swift", "package", "reset")
             }.assertNormalExitValue()
 
-        execOperations
-            .exec {
+        // Xcode toolchains find Testing.framework on their own. A Command Line Tools
+        // toolchain builds the harness but silently runs zero Swift Testing tests unless
+        // its own Frameworks directory is on the search and runtime paths. Never point an
+        // Xcode toolchain at the Command Line Tools copy: its @Suite macro would not match.
+        val developerDir =
+            ByteArrayOutputStream().use { out ->
+                execOperations
+                    .exec {
+                        commandLine("xcode-select", "-p")
+                        standardOutput = out
+                    }.assertNormalExitValue()
+                out.toString().trim()
+            }
+        val swiftTestCommand =
+            mutableListOf(
+                "swift",
+                "test",
+                "--jobs",
+                "2",
+                "-v",
+                "-Xswiftc",
+                "-warnings-as-errors",
+                "-Xswiftc",
+                "-target",
+                "-Xswiftc",
+                "arm64-apple-macosx15.0",
+            )
+        if (developerDir.endsWith("CommandLineTools")) {
+            val frameworks = "$developerDir/Library/Developer/Frameworks"
+            swiftTestCommand +=
+                listOf(
+                    "-Xswiftc",
+                    "-F",
+                    "-Xswiftc",
+                    frameworks,
+                    "-Xlinker",
+                    "-F",
+                    "-Xlinker",
+                    frameworks,
+                    "-Xlinker",
+                    "-rpath",
+                    "-Xlinker",
+                    frameworks,
+                    "-Xlinker",
+                    "-rpath",
+                    "-Xlinker",
+                    "$developerDir/Library/Developer/usr/lib",
+                )
+        }
+        val swiftTestOutput = ByteArrayOutputStream()
+        val swiftTestResult =
+            execOperations.exec {
                 workingDir = layout.projectDirectory.dir("swift-test-harness").asFile
-                commandLine("swift", "test")
-            }.assertNormalExitValue()
+                commandLine(swiftTestCommand)
+                standardOutput = swiftTestOutput
+                errorOutput = swiftTestOutput
+                isIgnoreExitValue = true
+            }
+        val swiftTestLog = swiftTestOutput.toString()
+        println(swiftTestLog)
+        swiftTestResult.assertNormalExitValue()
+        if (!swiftTestLog.contains(Regex("""Test run with [1-9]\d* tests?"""))) {
+            throw GradleException("swift test ran no Swift Testing tests (toolchain: $developerDir)")
+        }
     }
 }
 
@@ -1542,3 +1600,188 @@ val fullTargetBuildTaskNames =
 tasks.named("build") {
     dependsOn(fullTargetBuildTaskNames)
 }
+// kotlinmania:android-publication:v1 begin
+// The Android KMP plugin owns the single Android Maven publication.
+// Verify its real staged payload; never attach a second AAR publication.
+val androidPublicationRoot =
+    providers.provider {
+        publishing.publications.getByName("kotlinMultiplatform") as MavenPublication
+    }
+val androidPublicationBundle =
+    tasks.register<Zip>("androidPublicationBundle") {
+        group = "verification"
+        // A root publication can require shared Native/cinterop metadata. Never initiate
+        // its Apple compilation from the Linux Android job.
+        val externalRoot = providers.gradleProperty("project.publication.android.rootStagingDirectory").orNull
+        val root = androidPublicationRoot.get()
+        val coordinatePath = "${root.groupId.replace('.', '/')}/${root.artifactId}"
+        dependsOn(tasks.named<PublishToMavenRepository>("publishAndroidPublicationToCentralPortalStagingRepository"))
+        from(layout.buildDirectory.dir("staging-deploy")) {
+            include("$coordinatePath-android/${root.version}/**")
+        }
+        if (externalRoot == null) {
+            val hasAppleTargets =
+                kotlin.targets
+                    .withType<org.jetbrains.kotlin.gradle.plugin.mpp.KotlinNativeTarget>()
+                    .any { it.konanTarget.family.isAppleFamily }
+            check(!hasAppleTargets || providers.systemProperty("os.name").get().startsWith("Mac")) {
+                "Stage the real KMP root on macOS, then set project.publication.android.rootStagingDirectory and expectedRootHead"
+            }
+            dependsOn(tasks.named<PublishToMavenRepository>("publishKotlinMultiplatformPublicationToCentralPortalStagingRepository"))
+            from(layout.buildDirectory.dir("staging-deploy")) {
+                include("$coordinatePath/${root.version}/**")
+            }
+        } else {
+            val rootDirectory = file(externalRoot)
+            val sourceReceipt = file("$externalRoot.source-head")
+            val expectedHead = providers.gradleProperty("project.publication.android.expectedRootHead")
+            inputs.file(sourceReceipt)
+            inputs.property("expectedRootHead", expectedHead)
+            from(rootDirectory) { include("$coordinatePath/${root.version}/**") }
+            doFirst {
+                val head = expectedHead.orNull
+                check(head != null && head.matches(Regex("[0-9a-f]{40}"))) { "Set expectedRootHead to the exact source commit" }
+                check(rootDirectory.isDirectory && sourceReceipt.isFile && sourceReceipt.readText().trim() == head) {
+                    "Missing or stale same-head KMP root staging receipt: $sourceReceipt"
+                }
+                check(file("$externalRoot/$coordinatePath/${root.version}/${root.artifactId}-${root.version}.module").isFile) {
+                    "Missing real KMP root module metadata in $rootDirectory"
+                }
+            }
+        }
+        duplicatesStrategy = DuplicatesStrategy.FAIL
+        archiveFileName.set("android-publication.zip")
+        destinationDirectory.set(layout.buildDirectory.dir("verification"))
+    }
+val verifyAndroidPublication =
+    tasks.register<Exec>("verifyAndroidPublication") {
+        group = "verification"
+        description = "Checks Android AAR bytecode, root redirects, POM and API/runtime metadata."
+        dependsOn(androidPublicationBundle)
+        val script = rootProject.layout.projectDirectory.file("verification/verify_android_publication.py")
+        val bundle = androidPublicationBundle.flatMap { it.archiveFile }
+        val receipt = layout.buildDirectory.file("reports/publication/android.json")
+        inputs.files(script, bundle)
+        val classes = providers.gradleProperty("project.publication.android.publicClasses").orElse("")
+        val edges = providers.gradleProperty("project.publication.android.apiDependencies").orElse("")
+        inputs.property("publicClasses", classes)
+        inputs.property("apiDependencies", edges)
+        outputs.file(receipt)
+        doFirst {
+            val publicClasses =
+                classes
+                    .get()
+                    .split(',')
+                    .map { it.trim() }
+                    .filter { it.isNotEmpty() }
+            check(publicClasses.isNotEmpty()) { "Set project.publication.android.publicClasses to actual public .class paths" }
+            val root = androidPublicationRoot.get()
+            commandLine(
+                listOf(
+                    "python3",
+                    script.asFile.absolutePath,
+                    bundle.get().asFile.absolutePath,
+                    "--group",
+                    root.groupId,
+                    "--module",
+                    root.artifactId,
+                    "--version",
+                    root.version,
+                    "--receipt",
+                    receipt.get().asFile.absolutePath,
+                ) + publicClasses.flatMap { listOf("--public-class", it) } +
+                    edges
+                        .get()
+                        .split(',')
+                        .map { it.trim() }
+                        .filter { it.isNotEmpty() }
+                        .flatMap { listOf("--api-dependency", it) },
+            )
+        }
+    }
+tasks.named("publishToCentralPortal") { dependsOn(verifyAndroidPublication) }
+// Validate declared common pins before the release ZIP is assembled. This task is
+// not a dependency of Android-only verification: transported root staging remains host scoped.
+val verifyPublicationPins =
+    tasks.register<Exec>("verifyPublicationPins") {
+        group = "verification"
+        description = "Checks staged root/Android dependency versions before release bundling."
+        dependsOn(
+            "publishKotlinMultiplatformPublicationToCentralPortalStagingRepository",
+            "publishAndroidPublicationToCentralPortalStagingRepository",
+        )
+        val sourceHead =
+            providers
+                .exec {
+                    workingDir(projectDir)
+                    commandLine("git", "rev-parse", "HEAD")
+                }.standardOutput.asText
+                .map { it.trim() }
+        val script = rootProject.layout.projectDirectory.file("verification/verify_publication_pins.py")
+        val repository = layout.buildDirectory.dir("staging-deploy")
+        val receipt = layout.buildDirectory.file("reports/publication/dependency-pins.json")
+        val pomMappings = providers.gradleProperty("project.publication.android.pomDependencyModules").orElse("")
+        inputs.files(
+            script,
+            rootProject.layout.projectDirectory.file("gradle/libs.versions.toml"),
+            rootProject.layout.projectDirectory.file("gradle.properties"),
+            layout.projectDirectory.file("build.gradle.kts"),
+        )
+        inputs.dir(repository)
+        inputs.property("sourceHead", sourceHead)
+        inputs.property("pomDependencyModules", pomMappings)
+        outputs.file(receipt)
+        doFirst {
+            val expected = linkedMapOf<String, String>()
+            // Public Gradle configuration dependency APIs retain direct and catalog bundle declarations.
+            for (name in listOf("commonMainApi", "commonMainImplementation")) {
+                for (dependency in configurations.getByName(name).dependencies) {
+                    check(dependency is org.gradle.api.artifacts.ExternalModuleDependency) {
+                        "Unsupported common dependency layout in $name; review publication pins explicitly"
+                    }
+                    val key = "${dependency.group}:${dependency.name}"
+                    val pinned = dependency.versionConstraint.requiredVersion
+                    check(
+                        !dependency.group.isNullOrBlank() && pinned.isNotBlank() &&
+                            !pinned.startsWith("latest.") && pinned.none { it in "+[]()," },
+                    ) {
+                        "Publication requires an exact dependency version: $key"
+                    }
+                    check(expected.put(key, pinned).let { it == null || it == pinned }) {
+                        "Conflicting declared publication versions: $key"
+                    }
+                }
+            }
+            val stdlib = "org.jetbrains.kotlin:kotlin-stdlib"
+            check(expected.put(stdlib, kotlinVersion).let { it == null || it == kotlinVersion }) {
+                "Declared Kotlin stdlib disagrees with kotlinVersion"
+            }
+            val root = androidPublicationRoot.get()
+            commandLine(
+                listOf(
+                    "python3",
+                    script.asFile.absolutePath,
+                    repository.get().asFile.absolutePath,
+                    "--group",
+                    root.groupId,
+                    "--module",
+                    root.artifactId,
+                    "--version",
+                    root.version,
+                    "--source-head",
+                    sourceHead.get(),
+                    "--receipt",
+                    receipt.get().asFile.absolutePath,
+                ) +
+                    expected.flatMap { (key, pin) -> listOf("--dependency", "$key:$pin") } +
+                    pomMappings
+                        .get()
+                        .split(',')
+                        .map { it.trim() }
+                        .filter { it.isNotEmpty() }
+                        .flatMap { listOf("--pom-dependency", it) },
+            )
+        }
+    }
+tasks.named("centralPortalBundle") { dependsOn(verifyPublicationPins) }
+// kotlinmania:android-publication:v1 end
